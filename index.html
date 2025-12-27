@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="he">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>לוח משימות שבועי</title>
+
+<link rel="manifest" href="manifest.json">
+
+<style>
+body {
+  font-family: system-ui;
+  direction: rtl;
+  background: linear-gradient(135deg,#eef2ff,#f8fafc);
+  margin: 0;
+  padding: 10px;
+}
+h1 { text-align: center; }
+
+.week {
+  display: grid;
+  grid-template-columns: repeat(auto-fit,minmax(160px,1fr));
+  gap: 10px;
+}
+
+.day {
+  background: white;
+  border-radius: 12px;
+  padding: 10px;
+  box-shadow: 0 5px 10px rgba(0,0,0,.08);
+}
+
+.day h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.task {
+  background: #e5e7eb;
+  border-radius: 8px;
+  padding: 6px;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.task.past { background: #c7d2fe; }
+.task.done { background: #bbf7d0; }
+
+.task button {
+  margin-top: 3px;
+  font-size: 12px;
+}
+
+.add {
+  width: 100%;
+  margin-top: 5px;
+}
+
+.toggle {
+  text-align: center;
+  margin: 15px;
+}
+</style>
+</head>
+
+<body>
+<h1>📅 לוח משימות</h1>
+<div class="week" id="week"></div>
+
+<div class="toggle">
+🔔 תזכורות:
+<button onclick="toggleNotify()" id="notifyBtn">כבוי</button>
+</div>
+
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js');
+}
+
+let notify = false;
+const week = document.getElementById("week");
+
+function toggleNotify() {
+  notify = !notify;
+  Notification.requestPermission();
+  document.getElementById("notifyBtn").innerText = notify ? "פועל" : "כבוי";
+}
+
+function getWeek() {
+  const arr=[];
+  const d=new Date();
+  d.setDate(d.getDate()-d.getDay());
+  for(let i=0;i<7;i++){
+    const x=new Date(d);
+    x.setDate(d.getDate()+i);
+    arr.push(x);
+  }
+  return arr;
+}
+
+function load() {
+  return JSON.parse(localStorage.getItem("tasks")||"[]");
+}
+function save(t){ localStorage.setItem("tasks",JSON.stringify(t)); render(); }
+
+function render() {
+  week.innerHTML="";
+  const tasks=load();
+  const now=new Date();
+
+  getWeek().forEach(date=>{
+    const day=date.toISOString().split("T")[0];
+    const box=document.createElement("div");
+    box.className="day";
+    box.innerHTML=`<h3>${date.toLocaleDateString("he-IL")}</h3>`;
+
+    tasks.filter(t=>t.date===day).forEach(t=>{
+      const time=new Date(`${t.date}T${t.time}`);
+      const div=document.createElement("div");
+      div.className="task";
+      if(t.done) div.classList.add("done");
+      else if(time<now) div.classList.add("past");
+
+      div.innerHTML=`
+      ⏰ ${t.time}<br>${t.text}
+      <br>
+      <button onclick="editTask('${t.id}')">✏️</button>
+      <button onclick="deleteTask('${t.id}')">🗑️</button>
+      <button onclick="doneTask('${t.id}')">✔</button>
+      `;
+      box.appendChild(div);
+
+      if(notify && !t.notified && time>now){
+        setTimeout(()=>{
+          navigator.serviceWorker.ready.then(r=>{
+            r.showNotification("🔔 תזכורת",{body:t.text});
+          });
+          t.notified=true;
+          save(tasks);
+        },time-now);
+      }
+    });
+
+    const btn=document.createElement("button");
+    btn.className="add";
+    btn.textContent="➕ הוסף משימה";
+    btn.onclick=()=>addTask(day);
+    box.appendChild(btn);
+
+    week.appendChild(box);
+  });
+}
+
+function addTask(date){
+  const text=prompt("משימה:");
+  const time=prompt("שעה HH:MM");
+  if(!text||!time)return;
+  const t=load();
+  t.push({id:crypto.randomUUID(),date,time,text,done:false,notified:false});
+  save(t);
+}
+
+function editTask(id){
+  const t=load();
+  const task=t.find(x=>x.id===id);
+  const text=prompt("עריכה:",task.text);
+  if(text!==null) task.text=text;
+  save(t);
+}
+
+function deleteTask(id){
+  if(confirm("למחוק?")){
+    save(load().filter(t=>t.id!==id));
+  }
+}
+
+function doneTask(id){
+  const t=load();
+  t.find(x=>x.id===id).done=true;
+  save(t);
+}
+
+render();
+</script>
+</body>
+</html>
